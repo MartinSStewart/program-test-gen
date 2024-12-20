@@ -89,33 +89,32 @@ test =
                       }
                     ]
                     |> expectEqualMultiline
-                        (exampleCode
-                            """ T.start
-        "test0"
-        (Time.millisToPosix 0)
-        config
-        [ T.connectFrontend
-            0
-            (Effect.Lamdera.sessionIdFromString "sessionId0")
-            /my-site.com
-            { width = 1000, height = 800 }
-            (\\tab1 ->
-                [ tab1.click 100 (Dom.id "start")
-                , tab1.click 100 (Dom.id "edit")
-                , T.connectFrontend
-                    100
-                    (Effect.Lamdera.sessionIdFromString "sessionId0")
-                    /my-site.com/about
-                    { width = 1100, height = 700 }
-                    (\\tab2 ->
-                        [ tab2.clickLink 100 "/"
-                        , tab1.keyDown 0 (Dom.id "loginField") "h" [  ]
-                        ]
-                    )
-                ]
-            )
-        ]
-    
+                        (expected
+                            """T.start
+    "test0"
+    (Time.millisToPosix 0)
+    config
+    [ T.connectFrontend
+        0
+        (Lamdera.sessionIdFromString "sessionId0")
+        "/my-site.com"
+        { width = 1000, height = 800 }
+        (\\tab1 ->
+           [ tab1.click 100 (Dom.id "start")
+           , tab1.click 100 (Dom.id "edit")
+           , T.connectFrontend
+               100
+               (Lamdera.sessionIdFromString "sessionId0")
+               "/my-site.com/about"
+               { width = 1100, height = 700 }
+               (\\tab2 ->
+                  [ tab2.clickLink 100 "/"
+                  , tab1.keyDown 0 (Dom.id "loginField") "h" []
+                  ]
+               )
+           ]
+        )
+    ]
     """
                         )
         , Test.test "Add test to existing code that has no tests" <|
@@ -424,7 +423,9 @@ domain =
 
 stringToJson : String -> Json.Encode.Value
 stringToJson json =
-    Result.withDefault Json.Encode.null (Json.Decode.decodeString Json.Decode.value json)
+    Result.withDefault
+        Json.Encode.null
+        (Json.Decode.decodeString Json.Decode.value json)
 
 
 handlePortToJs : { currentRequest : T.PortToJs, data : T.Data FrontendModel BackendModel } -> Maybe ( String, Json.Decode.Value )
@@ -432,20 +433,18 @@ handlePortToJs { currentRequest } =
     Dict.get currentRequest.portName portRequests
 
 
-{-| Please don't modify or rename this function -}
-portRequests : Dict String (String, Json.Encode.Value)
+{-| Please don't modify or rename this function
+-}
+portRequests : Dict.Dict String ( String, Json.Encode.Value )
 portRequests =
-    [ 
-    ]
-        |> Dict.fromList
+    [] |> Dict.fromList
 
 
-{-| Please don't modify or rename this function -}
-httpRequests : Dict String String
+{-| Please don't modify or rename this function
+-}
+httpRequests : Dict.Dict String String
 httpRequests =
-    [ 
-    ]
-        |> Dict.fromList
+    [] |> Dict.fromList
 
 
 handleHttpRequests : Dict String Bytes -> { currentRequest : HttpRequest, data : T.Data FrontendModel BackendModel } -> HttpResponse
@@ -489,7 +488,7 @@ tests httpData =
                 (\\_ -> UnhandledMultiFileUpload)
                 domain
     in
-    ["""
+    [ """
         ++ tests
         ++ "]"
         |> String.replace "\u{000D}" ""
