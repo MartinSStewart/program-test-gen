@@ -1103,13 +1103,13 @@ codegen parsedCode settings events =
                             |> Pretty.pretty 120
                             |> String.replace "\n" "\n    "
                     )
-                |> String.join "\n    ,"
+                |> String.join "\n    , "
                 |> (\a ->
                         if parsedCode.noPriorTests || List.isEmpty tests then
                             a ++ "\n    "
 
                         else
-                            "\n    ," ++ a
+                            "\n    , " ++ a
                    )
     in
     if settings.showAllCode then
@@ -1208,10 +1208,10 @@ codegen parsedCode settings events =
 urlToStringNoDomain : String -> String
 urlToStringNoDomain url =
     case String.split "/" url of
-        "http:" :: _ :: rest ->
+        "http:" :: _ :: _ :: rest ->
             "/" ++ String.join "/" rest
 
-        "https:" :: _ :: rest ->
+        "https:" :: _ :: _ :: rest ->
             "/" ++ String.join "/" rest
 
         _ ->
@@ -1233,10 +1233,6 @@ eventToString depth settings clients startTime events =
             in
             case event of
                 Connect2 clientId delay { url, sessionId, windowWidth, windowHeight } events2 ->
-                    let
-                        indent =
-                            String.repeat (8 * depth + 12) " "
-                    in
                     Codegen.apply
                         [ Codegen.fqFun [ "T" ] "connectFrontend"
                         , Codegen.int delay

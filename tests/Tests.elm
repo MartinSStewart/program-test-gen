@@ -90,14 +90,14 @@ test =
                     ]
                     |> expectEqualMultiline
                         (exampleCode
-                            """ T.start
+                            """T.start
         "test0"
         (Time.millisToPosix 0)
         config
         [ T.connectFrontend
             0
             (Effect.Lamdera.sessionIdFromString "sessionId0")
-            /my-site.com
+            "/"
             { width = 1000, height = 800 }
             (\\tab1 ->
                 [ tab1.click 100 (Dom.id "start")
@@ -105,13 +105,9 @@ test =
                 , T.connectFrontend
                     100
                     (Effect.Lamdera.sessionIdFromString "sessionId0")
-                    /my-site.com/about
+                    "/about"
                     { width = 1100, height = 700 }
-                    (\\tab2 ->
-                        [ tab2.clickLink 100 "/"
-                        , tab1.keyDown 0 (Dom.id "loginField") "h" [  ]
-                        ]
-                    )
+                    (\\tab2 -> [ tab2.clickLink 100 "/", tab1.keyDown 0 (Dom.id "loginField") "h" [] ])
                 ]
             )
         ]
@@ -153,19 +149,16 @@ test =
                             ]
                             |> expectEqualMultiline
                                 (exampleCode
-                                    """ T.start
+                                    """T.start
         "test0"
         (Time.millisToPosix 0)
         config
         [ T.connectFrontend
             0
             (Effect.Lamdera.sessionIdFromString "sessionId0")
-            /my-site.com
+            "/"
             { width = 1000, height = 800 }
-            (\\tab1 ->
-                [ tab1.click 100 (Dom.id "start")
-                ]
-            )
+            (\\tab1 -> [ tab1.click 100 (Dom.id "start") ])
         ]
     """
                                 )
@@ -183,12 +176,9 @@ test =
         [ T.connectFrontend
             0
             (Effect.Lamdera.sessionIdFromString "sessionId0")
-            /my-site.com
+            "/"
             { width = 1000, height = 800 }
-            (\\tab1 ->
-                [ tab1.click 100 (Dom.id "start")
-                ]
-            )
+            (\\tab1 -> [ tab1.click 100 (Dom.id "start") ])
         ]
     """)
                 of
@@ -231,12 +221,9 @@ test =
         [ T.connectFrontend
             0
             (Effect.Lamdera.sessionIdFromString "sessionId0")
-            /my-site.com
+            "/"
             { width = 1000, height = 800 }
-            (\\tab1 ->
-                [ tab1.click 100 (Dom.id "start")
-                ]
-            )
+            (\\tab1 -> [ tab1.click 100 (Dom.id "start") ])
         ]
     , T.start
         "test0"
@@ -245,12 +232,9 @@ test =
         [ T.connectFrontend
             0
             (Effect.Lamdera.sessionIdFromString "sessionId0")
-            /my-site.com
+            "/"
             { width = 1000, height = 800 }
-            (\\tab1 ->
-                [ tab1.click 100 (Dom.id "start")
-                ]
-            )
+            (\\tab1 -> [ tab1.click 100 (Dom.id "start") ])
         ]
     """
                                 )
