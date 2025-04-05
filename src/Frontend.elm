@@ -6,7 +6,9 @@ import Browser.Dom
 import Browser.Events
 import Browser.Navigation
 import Dict
+import Elm.CodeGen as Codegen
 import Elm.Parser
+import Elm.Pretty
 import Elm.Syntax.Declaration exposing (Declaration(..))
 import Elm.Syntax.Expression exposing (Expression(..))
 import Elm.Syntax.Node as Node exposing (Node(..))
@@ -17,9 +19,11 @@ import Html.Attributes
 import Icons
 import JsCode
 import Json.Decode
+import Json.Encode
 import Lamdera exposing (ClientId)
 import List.Extra
 import Maybe.Extra
+import Pretty
 import Random
 import SessionName
 import Sha256
@@ -913,17 +917,20 @@ eventsToEvent2 ({ previousEvent, rest } as state) startTime events =
                         |> eventsToEvent2Helper
 
                 Click mouseEvent ->
-                    case mouseEvent.targetId of
-                        Just targetId ->
-                            eventsToEvent2
-                                { previousEvent = Just { eventType = Click2 clientId delay { targetId = targetId }, time = timestamp }
-                                , rest = Maybe.Extra.toList previousEvent ++ rest
+                    eventsToEvent2
+                        { previousEvent =
+                            Just
+                                { eventType =
+                                    Click2 clientId
+                                        delay
+                                        { targetId = Maybe.withDefault "id-attribute-missing" mouseEvent.targetId
+                                        }
+                                , time = timestamp
                                 }
-                                startTime
-                                events2
-
-                        Nothing ->
-                            eventsToEvent2 state startTime events2
+                        , rest = Maybe.Extra.toList previousEvent ++ rest
+                        }
+                        startTime
+                        events2
 
                 ClickLink linkEvent ->
                     eventsToEvent2
@@ -940,37 +947,36 @@ eventsToEvent2 ({ previousEvent, rest } as state) startTime events =
                     eventsToEvent2 state startTime events2
 
                 Paste pasteEvent ->
-                    case pasteEvent.targetId of
-                        Just targetId ->
-                            eventsToEvent2
-                                { previousEvent = Just { eventType = Input2 clientId delay { targetId = targetId, text = pasteEvent.text }, time = timestamp }
-                                , rest = Maybe.Extra.toList previousEvent ++ rest
+                    eventsToEvent2
+                        { previousEvent =
+                            Just
+                                { eventType =
+                                    Input2 clientId
+                                        delay
+                                        { targetId = Maybe.withDefault "id-attribute-missing" pasteEvent.targetId
+                                        , text = pasteEvent.text
+                                        }
+                                , time = timestamp
                                 }
-                                startTime
-                                events2
-
-                        Nothing ->
-                            eventsToEvent2 state startTime events2
+                        , rest = Maybe.Extra.toList previousEvent ++ rest
+                        }
+                        startTime
+                        events2
 
                 ResetBackend ->
                     eventsToEvent2 state startTime events2
 
                 FromJsPort fromJsPort ->
-                    case fromJsPort.triggeredFromPort of
-                        Just _ ->
-                            eventsToEvent2 state startTime events2
-
-                        Nothing ->
-                            eventsToEvent2
-                                { previousEvent =
-                                    { eventType = FromJsPort2 clientId delay { port_ = fromJsPort.port_, data = fromJsPort.data }
-                                    , time = timestamp
-                                    }
-                                        |> Just
-                                , rest = Maybe.Extra.toList previousEvent ++ rest
-                                }
-                                startTime
-                                events2
+                    eventsToEvent2
+                        { previousEvent =
+                            { eventType = FromJsPort2 clientId delay { port_ = fromJsPort.port_, data = fromJsPort.data }
+                            , time = timestamp
+                            }
+                                |> Just
+                        , rest = Maybe.Extra.toList previousEvent ++ rest
+                        }
+                        startTime
+                        events2
 
                 WindowResize resizeEvent ->
                     eventsToEvent2
@@ -1090,7 +1096,13 @@ codegen parsedCode settings events =
         testsText : String
         testsText =
             tests
-                |> List.indexedMap (\index ( head, rest ) -> testCode settings head.timestamp index (head :: rest))
+                |> List.indexedMap
+                    (\index ( head, rest ) ->
+                        testCode settings head.timestamp index (head :: rest)
+                            |> Elm.Pretty.prettyExpression
+                            |> Pretty.pretty 120
+                            |> String.replace "\n" "\n    "
+                    )
                 |> String.join "\n    ,"
                 |> (\a ->
                         if parsedCode.noPriorTests || List.isEmpty tests then
@@ -1206,7 +1218,7 @@ urlToStringNoDomain url =
             url
 
 
-eventToString : Int -> Settings -> List ClientId -> Int -> List EventType2 -> List String
+eventToString : Int -> Settings -> List ClientId -> Int -> List EventType2 -> List Expression
 eventToString depth settings clients startTime events =
     List.map
         (\event ->
@@ -1225,47 +1237,46 @@ eventToString depth settings clients startTime events =
                         indent =
                             String.repeat (8 * depth + 12) " "
                     in
-                    "T.connectFrontend\n"
-                        ++ (indent ++ String.fromInt delay ++ "\n")
-                        ++ (indent ++ "(Effect.Lamdera.sessionIdFromString \"" ++ sessionId ++ "\")\n")
-                        ++ (indent ++ urlToStringNoDomain url ++ "\n")
-                        ++ (indent ++ "{ width = " ++ String.fromInt windowWidth ++ ", height = " ++ String.fromInt windowHeight ++ " }\n")
-                        ++ (indent ++ "(\\" ++ client clientId ++ " ->\n")
-                        ++ indent
-                        ++ "    [ "
-                        ++ String.join
-                            ("\n" ++ indent ++ "    , ")
-                            (eventToString (depth + 1) settings clients startTime events2)
-                        ++ "\n"
-                        ++ indent
-                        ++ "    ]\n"
-                        ++ indent
-                        ++ ")"
+                    Codegen.apply
+                        [ Codegen.fqFun [ "T" ] "connectFrontend"
+                        , Codegen.int delay
+                        , Codegen.apply
+                            [ Codegen.fqFun [ "Effect", "Lamdera" ] "sessionIdFromString"
+                            , Codegen.string sessionId
+                            ]
+                        , Codegen.string (urlToStringNoDomain url)
+                        , Codegen.record
+                            [ ( "width", Codegen.int windowWidth )
+                            , ( "height", Codegen.int windowHeight )
+                            ]
+                        , Codegen.lambda
+                            [ Codegen.varPattern (client clientId) ]
+                            (Codegen.list
+                                (eventToString (depth + 1) settings clients startTime events2)
+                            )
+                        ]
 
                 WindowResize2 clientId delay resizeEvent ->
-                    client clientId
-                        ++ ".resizeWindow "
-                        ++ String.fromInt delay
-                        ++ " { width = "
-                        ++ String.fromInt resizeEvent.width
-                        ++ ", height = "
-                        ++ String.fromInt resizeEvent.height
-                        ++ " }"
+                    Codegen.apply
+                        [ Codegen.access (Codegen.fun (client clientId)) "resizeWindow"
+                        , Codegen.int delay
+                        , Codegen.record
+                            [ ( "width", Codegen.int resizeEvent.width )
+                            , ( "height", Codegen.int resizeEvent.height )
+                            ]
+                        ]
 
                 KeyDown2 clientId delay keyEvent ->
-                    client clientId
-                        ++ ".keyDown "
-                        ++ String.fromInt delay
-                        ++ " "
-                        ++ targetIdFunc keyEvent.targetId
-                        ++ " \""
-                        ++ keyEvent.key
-                        ++ "\" [ "
-                        ++ String.join ", "
+                    Codegen.apply
+                        [ Codegen.access (Codegen.fun (client clientId)) "keyDown"
+                        , Codegen.int delay
+                        , targetIdFunc keyEvent.targetId
+                        , Codegen.string keyEvent.key
+                        , Codegen.list
                             (List.filterMap
                                 (\( name, bool ) ->
                                     if bool then
-                                        Just name
+                                        Just (Codegen.val name)
 
                                     else
                                         Nothing
@@ -1276,22 +1287,19 @@ eventToString depth settings clients startTime events =
                                 , ( "Key_MetaHeld", keyEvent.metaKey )
                                 ]
                             )
-                        ++ " ]"
+                        ]
 
                 KeyUp2 clientId delay keyEvent ->
-                    client clientId
-                        ++ ".keyUp "
-                        ++ String.fromInt delay
-                        ++ " "
-                        ++ targetIdFunc keyEvent.targetId
-                        ++ " \""
-                        ++ keyEvent.key
-                        ++ "\" [ "
-                        ++ String.join ", "
+                    Codegen.apply
+                        [ Codegen.access (Codegen.fun (client clientId)) "keyUp"
+                        , Codegen.int delay
+                        , targetIdFunc keyEvent.targetId
+                        , Codegen.string keyEvent.key
+                        , Codegen.list
                             (List.filterMap
                                 (\( name, bool ) ->
                                     if bool then
-                                        Just name
+                                        Just (Codegen.val name)
 
                                     else
                                         Nothing
@@ -1302,35 +1310,45 @@ eventToString depth settings clients startTime events =
                                 , ( "Key_MetaHeld", keyEvent.metaKey )
                                 ]
                             )
-                        ++ " ]"
+                        ]
 
                 Click2 clientId delay mouseEvent ->
-                    client clientId
-                        ++ ".click "
-                        ++ String.fromInt delay
-                        ++ " "
-                        ++ targetIdFunc mouseEvent.targetId
+                    Codegen.apply
+                        [ Codegen.access (Codegen.fun (client clientId)) "click"
+                        , Codegen.int delay
+                        , targetIdFunc mouseEvent.targetId
+                        ]
 
                 ClickLink2 clientId delay mouseEvent ->
-                    client clientId
-                        ++ ".clickLink \""
-                        ++ String.fromInt delay
-                        ++ " "
-                        ++ mouseEvent.path
-                        ++ "\""
+                    Codegen.apply
+                        [ Codegen.access (Codegen.fun (client clientId)) "clickLink"
+                        , Codegen.int delay
+                        , Codegen.string mouseEvent.path
+                        ]
 
                 Input2 clientId delay { targetId, text } ->
-                    client clientId
-                        ++ ".input "
-                        ++ String.fromInt delay
-                        ++ " "
-                        ++ targetIdFunc targetId
-                        ++ " \""
-                        ++ text
-                        ++ "\""
+                    Codegen.apply
+                        [ Codegen.access (Codegen.fun (client clientId)) "input"
+                        , Codegen.int delay
+                        , targetIdFunc targetId
+                        , Codegen.string text
+                        ]
 
-                FromJsPort2 _ _ _ ->
-                    ""
+                FromJsPort2 clientId delay { port_, data } ->
+                    Codegen.apply
+                        [ Codegen.access (Codegen.fun (client clientId)) "portEvent"
+                        , Codegen.int delay
+                        , Codegen.string port_
+                        , Codegen.apply
+                            [ Codegen.fqFun [ "Maybe" ] "withDefault"
+                            , Codegen.apply [ Codegen.fqFun [ "Json", "Encode" ] "object", Codegen.list [] ]
+                            , Codegen.apply
+                                [ Codegen.fqFun [ "Json", "Decode" ] "decodeValue"
+                                , Codegen.fqFun [ "Json", "Decode" ] "value"
+                                , Codegen.string data
+                                ]
+                            ]
+                        ]
 
                 PointerDown2 clientId delay a ->
                     pointerCodegen delay settings "pointerDown" (client clientId) a
@@ -1369,12 +1387,29 @@ eventToString depth settings clients startTime events =
                     touchCodegen delay "touchEnd" (client clientId) a
 
                 CheckView2 clientId delay checkViewEvent ->
-                    client clientId
-                        ++ ".checkView "
-                        ++ String.fromInt delay
-                        ++ " (Test.Html.Query.has [ "
-                        ++ String.join ", " (List.map (\text -> "Selector.text \"" ++ text ++ "\"") checkViewEvent.selection)
-                        ++ " ])"
+                    --client clientId
+                    --    ++ ".checkView "
+                    --    ++ String.fromInt delay
+                    --    ++ " (Test.Html.Query.has [ "
+                    --    ++ String.join ", " (List.map (\text -> "Selector.text \"" ++ text ++ "\"") checkViewEvent.selection)
+                    --    ++ " ])"
+                    Codegen.apply
+                        [ Codegen.access (Codegen.fun (client clientId)) "checkView"
+                        , Codegen.int delay
+                        , Codegen.apply
+                            [ Codegen.fqFun [ "Test", "Html", "Query" ] "has"
+                            , Codegen.list
+                                (List.map
+                                    (\text ->
+                                        Codegen.apply
+                                            [ Codegen.fqFun [ "Test", "Html", "Selector" ] "text"
+                                            , Codegen.string text
+                                            ]
+                                    )
+                                    checkViewEvent.selection
+                                )
+                            ]
+                        ]
 
                 MouseDown2 clientId delay a ->
                     mouseCodegen delay settings "mouseDown" (client clientId) a
@@ -1398,68 +1433,90 @@ eventToString depth settings clients startTime events =
                     mouseCodegen delay settings "mouseOut" (client clientId) a
 
                 Focus2 clientId delay a ->
-                    client clientId
-                        ++ ".focus "
-                        ++ String.fromInt delay
-                        ++ " "
-                        ++ targetIdFunc a.targetId
-                        ++ "\n"
+                    --client clientId
+                    --    ++ ".focus "
+                    --    ++ String.fromInt delay
+                    --    ++ " "
+                    --    ++ targetIdFunc a.targetId
+                    --    ++ "\n"
+                    Codegen.apply
+                        [ Codegen.access (Codegen.fun (client clientId)) "focus"
+                        , Codegen.int delay
+                        , targetIdFunc a.targetId
+                        ]
 
                 Blur2 clientId delay a ->
-                    client clientId
-                        ++ ".blur "
-                        ++ String.fromInt delay
-                        ++ " "
-                        ++ targetIdFunc a.targetId
+                    --client clientId
+                    --    ++ ".blur "
+                    --    ++ String.fromInt delay
+                    --    ++ " "
+                    --    ++ targetIdFunc a.targetId
+                    Codegen.apply
+                        [ Codegen.access (Codegen.fun (client clientId)) "blur"
+                        , Codegen.int delay
+                        , targetIdFunc a.targetId
+                        ]
 
                 Wheel2 clientId delay a ->
                     let
+                        modifiers : List Expression
                         modifiers =
                             List.filterMap
                                 (\( name, value, default ) ->
-                                    if value == default then
+                                    if value == Codegen.string default then
                                         Nothing
 
                                     else
-                                        Just (name ++ " " ++ value)
+                                        Just (Codegen.apply [ Codegen.val name, value ])
                                 )
-                                [ ( "DeltaX", String.fromFloat a.deltaX, "0" )
-                                , ( "DeltaZ", String.fromFloat a.deltaZ, "0" )
+                                [ ( "DeltaX", Codegen.float a.deltaX, "0" )
+                                , ( "DeltaZ", Codegen.float a.deltaZ, "0" )
                                 , ( "DeltaMode"
                                   , case a.deltaMode of
                                         1 ->
-                                            "DeltaLine"
+                                            Codegen.string "DeltaLine"
 
                                         2 ->
-                                            "DeltaPage"
+                                            Codegen.string "DeltaPage"
 
                                         _ ->
-                                            "DeltaPixel"
+                                            Codegen.string "DeltaPixel"
                                   , "DeltaPixel"
                                   )
                                 ]
-                                |> String.join ", "
                     in
-                    client clientId
-                        ++ ".wheel "
-                        ++ String.fromInt delay
-                        ++ " "
-                        ++ targetIdFunc a.mouseEvent.targetId
-                        ++ " "
-                        ++ String.fromFloat a.deltaY
-                        ++ " ("
-                        ++ String.fromFloat a.mouseEvent.offsetX
-                        ++ ","
-                        ++ String.fromFloat a.mouseEvent.offsetY
-                        ++ ") [ "
-                        ++ modifiers
-                        ++ " ] "
-                        ++ mouseEventModifiers settings a.mouseEvent
+                    --client clientId
+                    --    ++ ".wheel "
+                    --    ++ String.fromInt delay
+                    --    ++ " "
+                    --    ++ targetIdFunc a.mouseEvent.targetId
+                    --    ++ " "
+                    --    ++ String.fromFloat a.deltaY
+                    --    ++ " ("
+                    --    ++ String.fromFloat a.mouseEvent.offsetX
+                    --    ++ ","
+                    --    ++ String.fromFloat a.mouseEvent.offsetY
+                    --    ++ ") [ "
+                    --    ++ modifiers
+                    --    ++ " ] "
+                    --    ++ mouseEventModifiers settings a.mouseEvent
+                    Codegen.apply
+                        [ Codegen.access (Codegen.fun (client clientId)) "wheel"
+                        , Codegen.int delay
+                        , targetIdFunc a.mouseEvent.targetId
+                        , Codegen.float a.deltaY
+                        , Codegen.tuple
+                            [ Codegen.float a.mouseEvent.offsetX
+                            , Codegen.float a.mouseEvent.offsetY
+                            ]
+                        , Codegen.list modifiers
+                        , mouseEventModifiers settings a.mouseEvent
+                        ]
         )
         events
 
 
-testCode : Settings -> Int -> Int -> List Event -> String
+testCode : Settings -> Int -> Int -> List Event -> Expression
 testCode settings startTime testIndex events =
     let
         clients : List ClientId
@@ -1470,55 +1527,80 @@ testCode settings startTime testIndex events =
             eventsToEvent2 { previousEvent = Nothing, rest = [] } startTime events
                 |> eventToString 0 settings clients startTime
     in
-    " T.start\n        \"test"
-        ++ String.fromInt testIndex
-        ++ "\"\n        (Time.millisToPosix "
-        ++ String.fromInt startTime
-        ++ ")\n        config"
-        ++ "\n        [ "
-        ++ String.join "\n        , " events2
-        ++ "\n        ]"
+    --" T.start\n        \"test"
+    --    ++ String.fromInt testIndex
+    --    ++ "\"\n        (Time.millisToPosix "
+    --    ++ String.fromInt startTime
+    --    ++ ")\n        config"
+    --    ++ "\n        [ "
+    --    ++ String.join "\n        , " events2
+    --    ++ "\n        ]"
+    Codegen.apply
+        [ Codegen.fqFun [ "T" ] "start"
+        , Codegen.string ("test" ++ String.fromInt testIndex)
+        , Codegen.apply
+            [ Codegen.fqFun [ "Time" ] "millisToPosix"
+            , Codegen.int startTime
+            ]
+        , Codegen.fun "config"
+        , Codegen.list events2
+        ]
 
 
-touchCodegen : MillisecondWaitBefore -> String -> String -> TouchEvent -> String
+touchCodegen : MillisecondWaitBefore -> String -> String -> TouchEvent -> Expression
 touchCodegen delay funcName client a =
     let
-        touchToString : Touch -> String
+        touchToString : Touch -> Expression
         touchToString touch =
-            "{ id = "
-                ++ String.fromInt touch.identifier
-                ++ ", screenPos = ("
-                ++ String.fromFloat touch.screenX
-                ++ ", "
-                ++ String.fromFloat touch.screenY
-                ++ "), clientPos = ("
-                ++ String.fromFloat touch.clientX
-                ++ ", "
-                ++ String.fromFloat touch.clientY
-                ++ "), pagePos = ("
-                ++ String.fromFloat touch.pageX
-                ++ ", "
-                ++ String.fromFloat touch.pageY
-                ++ ") }"
+            --"{ id = "
+            --    ++ String.fromInt touch.identifier
+            --    ++ ", screenPos = ("
+            --    ++ String.fromFloat touch.screenX
+            --    ++ ", "
+            --    ++ String.fromFloat touch.screenY
+            --    ++ "), clientPos = ("
+            --    ++ String.fromFloat touch.clientX
+            --    ++ ", "
+            --    ++ String.fromFloat touch.clientY
+            --    ++ "), pagePos = ("
+            --    ++ String.fromFloat touch.pageX
+            --    ++ ", "
+            --    ++ String.fromFloat touch.pageY
+            --    ++ ") }"
+            Codegen.record
+                [ ( "id", Codegen.int touch.identifier )
+                , ( "screenPos", Codegen.tuple [ Codegen.float touch.screenX, Codegen.float touch.screenY ] )
+                , ( "clientPos", Codegen.tuple [ Codegen.float touch.clientX, Codegen.float touch.clientY ] )
+                , ( "pagePos", Codegen.tuple [ Codegen.float touch.pageX, Codegen.float touch.pageY ] )
+                ]
     in
-    client
-        ++ "."
-        ++ funcName
-        ++ " "
-        ++ String.fromInt delay
-        ++ " "
-        ++ targetIdFunc a.targetId
-        ++ " { targetTouches = [ "
-        ++ String.join ", " (List.map touchToString a.targetTouches)
-        ++ " ], changedTouches = [ "
-        ++ String.join ", " (List.map touchToString a.targetTouches)
-        ++ " ] }"
+    --client
+    --    ++ "."
+    --    ++ funcName
+    --    ++ " "
+    --    ++ String.fromInt delay
+    --    ++ " "
+    --    ++ targetIdFunc a.targetId
+    --    ++ " { targetTouches = [ "
+    --    ++ String.join ", " (List.map touchToString a.targetTouches)
+    --    ++ " ], changedTouches = [ "
+    --    ++ String.join ", " (List.map touchToString a.targetTouches)
+    --    ++ " ] }"
+    Codegen.apply
+        [ Codegen.access (Codegen.fun client) funcName
+        , Codegen.int delay
+        , targetIdFunc a.targetId
+        , Codegen.record
+            [ ( "targetTouches", Codegen.list (List.map touchToString a.targetTouches) )
+            , ( "changedTouches", Codegen.list (List.map touchToString a.changedTouches) )
+            ]
+        ]
 
 
-pointerCodegen : MillisecondWaitBefore -> Settings -> String -> String -> PointerEvent -> String
+pointerCodegen : MillisecondWaitBefore -> Settings -> String -> String -> PointerEvent -> Expression
 pointerCodegen delay { includeClientPos, includePagePos, includeScreenPos } funcName client a =
     let
-        options : List String
+        options : List Expression
         options =
             List.filterMap
                 (\( name, include, ( x, y ) ) ->
@@ -1526,7 +1608,12 @@ pointerCodegen delay { includeClientPos, includePagePos, includeScreenPos } func
                         Nothing
 
                     else
-                        Just (name ++ " " ++ String.fromFloat x ++ " " ++ String.fromFloat y)
+                        --Just (name ++ " " ++ String.fromFloat x ++ " " ++ String.fromFloat y)
+                        Codegen.apply
+                            [ Codegen.fun name
+                            , Codegen.tuple [ Codegen.float x, Codegen.float y ]
+                            ]
+                            |> Just
                 )
                 [ ( "ScreenXY", includeScreenPos, ( a.screenX, a.screenY ) )
                 , ( "PageXY", includePagePos, ( a.pageX, a.pageY ) )
@@ -1534,41 +1621,24 @@ pointerCodegen delay { includeClientPos, includePagePos, includeScreenPos } func
                 ]
                 ++ List.filterMap
                     identity
-                    [ case a.button of
-                        1 ->
-                            Just "PointerButton MainButton"
-
-                        2 ->
-                            Just "PointerButton MiddleButton"
-
-                        3 ->
-                            Just "PointerButton SecondButton"
-
-                        4 ->
-                            Just "PointerButton BackButton"
-
-                        5 ->
-                            Just "PointerButton ForwardButton"
-
-                        _ ->
-                            Nothing
+                    [ pointerButton a
                     , if a.altKey then
-                        Just "AltHeld"
+                        Just (Codegen.val "AltHeld")
 
                       else
                         Nothing
                     , if a.shiftKey then
-                        Just "ShiftHeld"
+                        Just (Codegen.val "ShiftHeld")
 
                       else
                         Nothing
                     , if a.ctrlKey then
-                        Just "CtrlHeld"
+                        Just (Codegen.val "CtrlHeld")
 
                       else
                         Nothing
                     , if a.metaKey then
-                        Just "MetaHeld"
+                        Just (Codegen.val "MetaHeld")
 
                       else
                         Nothing
@@ -1576,49 +1646,63 @@ pointerCodegen delay { includeClientPos, includePagePos, includeScreenPos } func
                         Nothing
 
                       else
-                        Just ("PointerId " ++ String.fromInt a.pointerId)
+                        Just (Codegen.apply [ Codegen.val "PointerId ", Codegen.int a.pointerId ])
                     , if a.isPrimary then
                         Nothing
 
                       else
-                        Just "IsNotPrimary"
+                        Just (Codegen.val "IsNotPrimary")
                     ]
     in
-    client
-        ++ "."
-        ++ funcName
-        ++ " "
-        ++ String.fromInt delay
-        ++ " "
-        ++ targetIdFunc a.targetId
-        ++ " ("
-        ++ String.fromFloat a.offsetX
-        ++ ","
-        ++ String.fromFloat a.offsetY
-        ++ ") [ "
-        ++ String.join ", " options
-        ++ " ]"
+    --client
+    --    ++ "."
+    --    ++ funcName
+    --    ++ " "
+    --    ++ String.fromInt delay
+    --    ++ " "
+    --    ++ targetIdFunc a.targetId
+    --    ++ " ("
+    --    ++ String.fromFloat a.offsetX
+    --    ++ ","
+    --    ++ String.fromFloat a.offsetY
+    --    ++ ") [ "
+    --    ++ String.join ", " options
+    --    ++ " ]"
+    Codegen.apply
+        [ Codegen.access (Codegen.fun client) funcName
+        , Codegen.int delay
+        , targetIdFunc a.targetId
+        , Codegen.tuple [ Codegen.float a.offsetX, Codegen.float a.offsetY ]
+        , Codegen.list options
+        ]
 
 
-mouseCodegen : MillisecondWaitBefore -> Settings -> String -> String -> MouseEvent -> String
+mouseCodegen : MillisecondWaitBefore -> Settings -> String -> String -> MouseEvent -> Expression
 mouseCodegen delay settings funcName client a =
-    client
-        ++ "."
-        ++ funcName
-        ++ " "
-        ++ String.fromInt delay
-        ++ " "
-        ++ targetIdFunc a.targetId
-        ++ " ("
-        ++ String.fromFloat a.offsetX
-        ++ ","
-        ++ String.fromFloat a.offsetY
-        ++ ") "
-        ++ mouseEventModifiers settings a
-        ++ "\n"
+    --client
+    --    ++ "."
+    --    ++ funcName
+    --    ++ " "
+    --    ++ String.fromInt delay
+    --    ++ " "
+    --    ++ targetIdFunc a.targetId
+    --    ++ " ("
+    --    ++ String.fromFloat a.offsetX
+    --    ++ ","
+    --    ++ String.fromFloat a.offsetY
+    --    ++ ") "
+    --    ++ mouseEventModifiers settings a
+    --    ++ "\n"
+    Codegen.apply
+        [ Codegen.access (Codegen.fun client) funcName
+        , Codegen.int delay
+        , targetIdFunc a.targetId
+        , Codegen.tuple [ Codegen.float a.offsetX, Codegen.float a.offsetY ]
+        , mouseEventModifiers settings a
+        ]
 
 
-mouseEventModifiers : Settings -> MouseEvent -> String
+mouseEventModifiers : Settings -> MouseEvent -> Expression
 mouseEventModifiers { includeClientPos, includePagePos, includeScreenPos } a =
     List.filterMap
         (\( name, include, ( x, y ) ) ->
@@ -1626,7 +1710,13 @@ mouseEventModifiers { includeClientPos, includePagePos, includeScreenPos } a =
                 Nothing
 
             else
-                Just (name ++ " " ++ String.fromFloat x ++ " " ++ String.fromFloat y)
+                --Just (name ++ " " ++ String.fromFloat x ++ " " ++ String.fromFloat y)
+                Codegen.apply
+                    [ Codegen.val name
+                    , Codegen.float x
+                    , Codegen.float y
+                    ]
+                    |> Just
         )
         [ ( "ScreenXY", includeScreenPos, ( a.screenX, a.screenY ) )
         , ( "PageXY", includePagePos, ( a.pageX, a.pageY ) )
@@ -1634,52 +1724,56 @@ mouseEventModifiers { includeClientPos, includePagePos, includeScreenPos } a =
         ]
         ++ List.filterMap
             identity
-            [ case a.button of
-                1 ->
-                    Just "PointerButton MainButton"
-
-                2 ->
-                    Just "PointerButton MiddleButton"
-
-                3 ->
-                    Just "PointerButton SecondButton"
-
-                4 ->
-                    Just "PointerButton BackButton"
-
-                5 ->
-                    Just "PointerButton ForwardButton"
-
-                _ ->
-                    Nothing
+            [ pointerButton a
             , if a.altKey then
-                Just "AltHeld"
+                Just (Codegen.val "AltHeld")
 
               else
                 Nothing
             , if a.shiftKey then
-                Just "ShiftHeld"
+                Just (Codegen.val "ShiftHeld")
 
               else
                 Nothing
             , if a.ctrlKey then
-                Just "CtrlHeld"
+                Just (Codegen.val "CtrlHeld")
 
               else
                 Nothing
             , if a.metaKey then
-                Just "MetaHeld"
+                Just (Codegen.val "MetaHeld")
 
               else
                 Nothing
             ]
-        |> String.join ", "
-        |> (\b -> "[ " ++ b ++ " ]")
+        |> Codegen.list
 
 
-targetIdFunc : String -> String
+pointerButton : { a | button : Int } -> Maybe Codegen.Expression
+pointerButton a =
+    case a.button of
+        1 ->
+            Just (Codegen.apply [ Codegen.val "PointerButton", Codegen.val "MainButton" ])
+
+        2 ->
+            Just (Codegen.apply [ Codegen.val "PointerButton", Codegen.val "MiddleButton" ])
+
+        3 ->
+            Just (Codegen.apply [ Codegen.val "PointerButton", Codegen.val "SecondButton" ])
+
+        4 ->
+            Just (Codegen.apply [ Codegen.val "PointerButton", Codegen.val "BackButton" ])
+
+        5 ->
+            Just (Codegen.apply [ Codegen.val "PointerButton", Codegen.val "ForwardButton" ])
+
+        _ ->
+            Nothing
+
+
+targetIdFunc : String -> Expression
 targetIdFunc id =
-    "(Dom.id \"" ++ id ++ "\")"
+    Codegen.apply [ Codegen.fqFun [ "Dom" ] "id", Codegen.string id ]
 
 
 view : FrontendModel -> Browser.Document FrontendMsg
