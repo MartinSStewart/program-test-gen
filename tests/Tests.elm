@@ -241,6 +241,97 @@ test =
 
                     Err error ->
                         Expect.fail (Frontend.parseErrorToString error)
+        , Test.test "Handle port event" <|
+            \_ ->
+                case
+                    Frontend.parseCode
+                        (exampleCode """ T.start
+        "myTest"
+        (Time.millisToPosix 0)
+        config
+        [ T.connectFrontend
+            0
+            (Effect.Lamdera.sessionIdFromString "sessionId0")
+            "/"
+            { width = 1000, height = 800 }
+            (\\tab1 -> [ tab1.click 100 (Dom.id "start") ])
+        ]
+    """)
+                of
+                    Ok parsedCode ->
+                        Frontend.codegen
+                            parsedCode
+                            { includeClientPos = False
+                            , includePagePos = False
+                            , includeScreenPos = False
+                            , showAllCode = True
+                            }
+                            [ { isHidden = False
+                              , timestamp = 0
+                              , eventType = ResetBackend
+                              , clientId = "clientId0"
+                              }
+                            , { isHidden = False
+                              , timestamp = 0
+                              , eventType =
+                                    Connect
+                                        { url = "https://my-site.com"
+                                        , sessionId = "sessionId0"
+                                        , windowWidth = 1000
+                                        , windowHeight = 800
+                                        }
+                              , clientId = "clientId0"
+                              }
+                            , { isHidden = False
+                              , timestamp = 100
+                              , eventType = FromJsPort { port_ = "from_js", data = "{ \"field\": 123 }" }
+                              , clientId = "clientId0"
+                              }
+                            , { isHidden = False
+                              , timestamp = 100
+                              , eventType = Click { targetId = Just "start" }
+                              , clientId = "clientId0"
+                              }
+                            ]
+                            |> expectEqualMultiline
+                                (exampleCode
+                                    """ T.start
+        "myTest"
+        (Time.millisToPosix 0)
+        config
+        [ T.connectFrontend
+            0
+            (Effect.Lamdera.sessionIdFromString "sessionId0")
+            "/"
+            { width = 1000, height = 800 }
+            (\\tab1 -> [ tab1.click 100 (Dom.id "start") ])
+        ]
+    , T.start
+        "test0"
+        (Time.millisToPosix 0)
+        config
+        [ T.connectFrontend
+            0
+            (Effect.Lamdera.sessionIdFromString "sessionId0")
+            "/"
+            { width = 1000, height = 800 }
+            (\\tab1 ->
+                [ tab1.portEvent
+                    100
+                    "from_js"
+                    (Maybe.withDefault
+                        (Json.Encode.object [])
+                        (Json.Decode.decodeValue Json.Decode.value "{ \\"field\\": 123 }")
+                    )
+                , tab1.click 0 (Dom.id "start")
+                ]
+            )
+        ]
+    """
+                                )
+
+                    Err error ->
+                        Expect.fail (Frontend.parseErrorToString error)
         ]
 
 
@@ -411,19 +502,6 @@ stringToJson json =
     Result.withDefault Json.Encode.null (Json.Decode.decodeString Json.Decode.value json)
 
 
-handlePortToJs : { currentRequest : T.PortToJs, data : T.Data FrontendModel BackendModel } -> Maybe ( String, Json.Decode.Value )
-handlePortToJs { currentRequest } =
-    Dict.get currentRequest.portName portRequests
-
-
-{-| Please don't modify or rename this function -}
-portRequests : Dict String (String, Json.Encode.Value)
-portRequests =
-    [ 
-    ]
-        |> Dict.fromList
-
-
 {-| Please don't modify or rename this function -}
 httpRequests : Dict String String
 httpRequests =
@@ -468,7 +546,7 @@ tests httpData =
                 Frontend.app_
                 Backend.app_
                 (handleHttpRequests httpData)
-                handlePortToJs
+                (\\_ -> Nothing)
                 (\\_ -> UnhandledFileUpload)
                 (\\_ -> UnhandledMultiFileUpload)
                 domain

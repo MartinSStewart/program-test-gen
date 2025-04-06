@@ -414,8 +414,8 @@ updateFromBackend msg model =
                     ( model, Cmd.none )
 
 
-parseCodeHelper : String -> Int -> Int -> Int -> Result ParseError ParsedCode
-parseCodeHelper code httpRequestsStart portRequestsStart testsStart =
+parseCodeHelper : String -> Int -> Int -> Result ParseError ParsedCode
+parseCodeHelper code httpRequestsStart testsStart =
     let
         fromListIndices : List Int
         fromListIndices =
@@ -437,23 +437,18 @@ parseCodeHelper code httpRequestsStart portRequestsStart testsStart =
     in
     case
         ( List.Extra.find (\index -> index > httpRequestsStart) fromListIndices
-        , List.Extra.find (\index -> index > portRequestsStart) fromListIndices
         , testsEndIndex
         )
     of
-        ( Just httpRequestsEnd, Just portRequestsEnd, Just testsEnd ) ->
+        ( Just httpRequestsEnd, Just testsEnd ) ->
             let
                 httpRequestsResult =
                     String.slice httpRequestsStart httpRequestsEnd code |> parseHttpRequests
-
-                portRequestsResult =
-                    String.slice portRequestsStart portRequestsEnd code |> parsePortRequests
 
                 sorted =
                     List.sortBy
                         (\( a, _, _ ) -> a)
                         [ ( httpRequestsStart, httpRequestsEnd, HttpRequestCode )
-                        , ( portRequestsStart, portRequestsEnd, PortRequestCode )
                         , ( testsEnd, testsEnd, TestEntryPoint )
                         ]
 
@@ -466,8 +461,8 @@ parseCodeHelper code httpRequestsStart portRequestsStart testsStart =
                         [] ->
                             String.length code
             in
-            case ( httpRequestsResult, portRequestsResult ) of
-                ( Ok httpRequests, Ok portRequests ) ->
+            case httpRequestsResult of
+                Ok httpRequests ->
                     { codeParts =
                         List.foldl
                             (\( start, end, codeType ) state ->
@@ -484,7 +479,6 @@ parseCodeHelper code httpRequestsStart portRequestsStart testsStart =
                             |> (\a -> UserCode (String.slice last (String.length code) code) :: a)
                             |> List.reverse
                     , httpRequests = httpRequests
-                    , portRequests = portRequests
                     , noPriorTests =
                         case String.slice testsStart testsEnd code |> String.split "\n    [" of
                             [ _, rest ] ->
@@ -495,38 +489,23 @@ parseCodeHelper code httpRequestsStart portRequestsStart testsStart =
                     }
                         |> Ok
 
-                ( Err (), Ok _ ) ->
+                Err () ->
                     Err InvalidHttpRequests
 
-                ( Ok _, Err () ) ->
-                    Err InvalidPortRequests
+        ( Nothing, _ ) ->
+            Err HttpRequestsEndNotFound
 
-                ( Err (), Err () ) ->
-                    Err InvalidHttpAndPortRequests
-
-        ( Nothing, _, _ ) ->
-            Err PortRequestsEndNotFound
-
-        ( _, Nothing, _ ) ->
-            Err PortRequestsEndNotFound
-
-        ( _, _, Nothing ) ->
+        ( _, Nothing ) ->
             Err TestEntryPointNotFound
 
 
 parseCode : String -> Result ParseError ParsedCode
 parseCode code =
-    case ( String.indexes "\nhttpRequests =" code, String.indexes "\nportRequests =" code, String.indexes "\ntests : " code ) of
-        ( [ httpRequestsStart ], [ portRequestsStart ], [ testsStart ] ) ->
-            parseCodeHelper code httpRequestsStart portRequestsStart testsStart
+    case ( String.indexes "\nhttpRequests =" code, String.indexes "\ntests : " code ) of
+        ( [ httpRequestsStart ], [ testsStart ] ) ->
+            parseCodeHelper code httpRequestsStart testsStart
 
-        ( [], [ _ ], [ _ ] ) ->
-            Err PortRequestsNotFound
-
-        ( [ _ ], [], [ _ ] ) ->
-            Err PortRequestsNotFound
-
-        ( [ _ ], [ _ ], [] ) ->
+        ( [ _ ], [] ) ->
             Err TestEntryPointNotFound
 
         _ ->
@@ -575,19 +554,6 @@ stringToJson json =
     Result.withDefault Json.Encode.null (Json.Decode.decodeString Json.Decode.value json)
 
 
-handlePortToJs : { currentRequest : T.PortToJs, data : T.Data FrontendModel BackendModel } -> Maybe ( String, Json.Decode.Value )
-handlePortToJs { currentRequest } =
-    Dict.get currentRequest.portName portRequests
-
-
-{-| Please don't modify or rename this function -}
-portRequests : Dict String (String, Json.Encode.Value)"""
-            |> String.replace "\u{000D}" ""
-            |> UserCode
-        , PortRequestCode
-        , """|> Dict.fromList
-
-
 {-| Please don't modify or rename this function -}
 httpRequests : Dict String String"""
             |> String.replace "\u{000D}" ""
@@ -632,7 +598,7 @@ tests httpData =
                 Frontend.app_
                 Backend.app_
                 (handleHttpRequests httpData)
-                handlePortToJs
+                (\\_ -> Nothing)
                 (\\_ -> UnhandledFileUpload)
                 (\\_ -> UnhandledMultiFileUpload)
                 domain
@@ -644,7 +610,6 @@ tests httpData =
         , UserCode "\n    ]"
         ]
     , httpRequests = []
-    , portRequests = []
     , noPriorTests = True
     }
 
@@ -1145,43 +1110,6 @@ codegen parsedCode settings events =
                                 Nothing
                     )
                     events
-
-            portRequests : String
-            portRequests =
-                List.filterMap
-                    (\event ->
-                        case event.eventType of
-                            FromJsPort fromJsPort ->
-                                case fromJsPort.triggeredFromPort of
-                                    Just trigger ->
-                                        Just { triggeredFromPort = trigger, port_ = fromJsPort.port_, data = fromJsPort.data }
-
-                                    Nothing ->
-                                        Nothing
-
-                            _ ->
-                                Nothing
-                    )
-                    events
-                    |> (\a -> List.map (\( b, ( c, d ) ) -> { triggeredFromPort = b, port_ = c, data = d }) parsedCode.portRequests ++ a)
-                    |> List.Extra.uniqueBy (\a -> a.triggeredFromPort)
-                    |> List.map
-                        (\fromJsPort ->
-                            "( \""
-                                ++ fromJsPort.triggeredFromPort
-                                ++ "\", ( \""
-                                ++ fromJsPort.port_
-                                ++ "\", stringToJson "
-                                ++ (if String.contains "\"" fromJsPort.data then
-                                        "\"\"\"" ++ fromJsPort.data ++ "\"\"\""
-
-                                    else
-                                        "\"" ++ fromJsPort.data ++ "\""
-                                   )
-                                ++ " ) )"
-                        )
-                    |> String.join "\n    , "
-                    |> (\a -> "\nportRequests =\n    [ " ++ a ++ "\n    ]\n        ")
         in
         List.map
             (\codePart ->
@@ -1191,9 +1119,6 @@ codegen parsedCode settings events =
 
                     HttpRequestCode ->
                         httpRequests
-
-                    PortRequestCode ->
-                        portRequests
 
                     TestEntryPoint ->
                         testsText
@@ -2012,17 +1937,8 @@ loadedView model =
 parseErrorToString : ParseError -> String
 parseErrorToString error =
     case error of
-        InvalidPortRequests ->
-            "The portRequests function was found but couldn't be parsed."
-
         InvalidHttpRequests ->
             "The httpRequests function was found but couldn't be parsed."
-
-        InvalidHttpAndPortRequests ->
-            "The portRequests and httpRequests functions were found but couldn't be parsed."
-
-        PortRequestsNotFound ->
-            "The portRequests function wasn't found."
 
         HttpRequestsNotFound ->
             "The httpRequests function wasn't found."
@@ -2032,9 +1948,6 @@ parseErrorToString error =
 
         UnknownError ->
             "This end-to-end test module appears to be corrupted or the wrong file is being loaded."
-
-        PortRequestsEndNotFound ->
-            "The portRequests function was found but it's supposed to end with \"|> Dict.fromList\""
 
         HttpRequestsEndNotFound ->
             "The httpRequests function was found but it's supposed to end with \"|> Dict.fromList\""

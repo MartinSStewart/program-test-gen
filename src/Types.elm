@@ -57,13 +57,9 @@ type ParsedCodeStatus
 
 
 type ParseError
-    = InvalidPortRequests
-    | InvalidHttpRequests
-    | InvalidHttpAndPortRequests
-    | PortRequestsNotFound
+    = InvalidHttpRequests
     | HttpRequestsNotFound
     | TestEntryPointNotFound
-    | PortRequestsEndNotFound
     | HttpRequestsEndNotFound
     | UnknownError
 
@@ -71,7 +67,6 @@ type ParseError
 type alias ParsedCode =
     { codeParts : List Code
     , httpRequests : List ( String, String )
-    , portRequests : List ( String, ( String, String ) )
     , noPriorTests : Bool
     }
 
@@ -79,7 +74,6 @@ type alias ParsedCode =
 type Code
     = UserCode String
     | HttpRequestCode
-    | PortRequestCode
     | TestEntryPoint
 
 
@@ -284,7 +278,7 @@ type alias HttpLocalEvent =
 
 
 type alias FromJsPortEvent =
-    { triggeredFromPort : Maybe String, port_ : String, data : String }
+    { port_ : String, data : String }
 
 
 type alias InputEvent =
