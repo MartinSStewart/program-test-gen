@@ -684,8 +684,8 @@ type alias MillisecondWaitBefore =
 
 
 type EventType2
-    = Input2 ClientId MillisecondWaitBefore { targetId : String, text : String }
-    | Click2 ClientId MillisecondWaitBefore { targetId : String }
+    = Input2 ClientId MillisecondWaitBefore { targetId : Maybe String, text : String }
+    | Click2 ClientId MillisecondWaitBefore { targetId : Maybe String }
     | ClickLink2 ClientId MillisecondWaitBefore LinkEvent
     | Connect2 ClientId MillisecondWaitBefore ConnectEvent (List EventType2)
     | KeyUp2 ClientId MillisecondWaitBefore KeyEvent
@@ -885,11 +885,7 @@ eventsToEvent2 ({ previousEvent, rest } as state) startTime events =
                     eventsToEvent2
                         { previousEvent =
                             Just
-                                { eventType =
-                                    Click2 clientId
-                                        delay
-                                        { targetId = Maybe.withDefault "id-attribute-missing" mouseEvent.targetId
-                                        }
+                                { eventType = Click2 clientId delay { targetId = mouseEvent.targetId }
                                 , time = timestamp
                                 }
                         , rest = Maybe.Extra.toList previousEvent ++ rest
@@ -916,9 +912,10 @@ eventsToEvent2 ({ previousEvent, rest } as state) startTime events =
                         { previousEvent =
                             Just
                                 { eventType =
-                                    Input2 clientId
+                                    Input2
+                                        clientId
                                         delay
-                                        { targetId = Maybe.withDefault "id-attribute-missing" pasteEvent.targetId
+                                        { targetId = pasteEvent.targetId
                                         , text = pasteEvent.text
                                         }
                                 , time = timestamp
@@ -1260,15 +1257,27 @@ eventToString depth settings clients startTime events =
                         [ Codegen.access (Codegen.fun (client clientId)) "portEvent"
                         , Codegen.int delay
                         , Codegen.string port_
-                        , Codegen.apply
-                            [ Codegen.fqFun [ "Maybe" ] "withDefault"
-                            , Codegen.apply [ Codegen.fqFun [ "Json", "Encode" ] "object", Codegen.list [] ]
-                            , Codegen.apply
-                                [ Codegen.fqFun [ "Json", "Decode" ] "decodeValue"
-                                , Codegen.fqFun [ "Json", "Decode" ] "value"
-                                , Codegen.string data
-                                ]
-                            ]
+                        , case Json.Decode.decodeString Json.Decode.float data of
+                            Ok float ->
+                                Codegen.apply [ Codegen.fqFun [ "Json", "Encode" ] "float", Codegen.float float ]
+
+                            Err _ ->
+                                case Json.Decode.decodeString Json.Decode.string data of
+                                    Ok text ->
+                                        Codegen.apply
+                                            [ Codegen.fqFun [ "Json", "Encode" ] "string", Codegen.string text ]
+
+                                    Err _ ->
+                                        Codegen.apply
+                                            [ Codegen.fqFun [ "Maybe" ] "withDefault"
+                                            , Codegen.apply
+                                                [ Codegen.fqFun [ "Json", "Encode" ] "object", Codegen.list [] ]
+                                            , Codegen.apply
+                                                [ Codegen.fqFun [ "Json", "Decode" ] "decodeValue"
+                                                , Codegen.fqFun [ "Json", "Decode" ] "value"
+                                                , Codegen.string data
+                                                ]
+                                            ]
                         ]
 
                 PointerDown2 clientId delay a ->
@@ -1692,9 +1701,9 @@ pointerButton a =
             Nothing
 
 
-targetIdFunc : String -> Expression
+targetIdFunc : Maybe String -> Expression
 targetIdFunc id =
-    Codegen.apply [ Codegen.fqFun [ "Dom" ] "id", Codegen.string id ]
+    Codegen.apply [ Codegen.fqFun [ "Dom" ] "id", Codegen.string (Maybe.withDefault "id-attribute-missing" id) ]
 
 
 view : FrontendModel -> Browser.Document FrontendMsg

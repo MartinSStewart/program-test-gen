@@ -177,11 +177,11 @@ type EventType
 
 
 type alias FocusEvent =
-    { targetId : String }
+    { targetId : Maybe String }
 
 
 type alias BlurEvent =
-    { targetId : String }
+    { targetId : Maybe String }
 
 
 type alias CheckViewEvent =
@@ -190,7 +190,7 @@ type alias CheckViewEvent =
 
 
 type alias PointerEvent =
-    { targetId : String
+    { targetId : Maybe String
     , ctrlKey : Bool
     , shiftKey : Bool
     , metaKey : Bool
@@ -216,7 +216,7 @@ type alias PointerEvent =
 
 
 type alias MouseEvent =
-    { targetId : String
+    { targetId : Maybe String
     , ctrlKey : Bool
     , shiftKey : Bool
     , metaKey : Bool
@@ -243,7 +243,7 @@ type alias WheelEvent =
 
 
 type alias TouchEvent =
-    { targetId : String
+    { targetId : Maybe String
     , ctrlKey : Bool
     , shiftKey : Bool
     , metaKey : Bool
@@ -282,11 +282,11 @@ type alias FromJsPortEvent =
 
 
 type alias InputEvent =
-    { targetId : String, text : String }
+    { targetId : Maybe String, text : String }
 
 
 type alias KeyEvent =
-    { targetId : String
+    { targetId : Maybe String
     , ctrlKey : Bool
     , shiftKey : Bool
     , metaKey : Bool

@@ -78,7 +78,7 @@ test =
                       , timestamp = 400
                       , eventType =
                             KeyDown
-                                { targetId = "loginField"
+                                { targetId = Just "loginField"
                                 , ctrlKey = False
                                 , shiftKey = False
                                 , metaKey = False
@@ -288,8 +288,8 @@ test =
                               , clientId = "clientId0"
                               }
                             , { isHidden = False
-                              , timestamp = 100
-                              , eventType = Click { targetId = Just "start" }
+                              , timestamp = 200
+                              , eventType = FromJsPort { port_ = "from_js2", data = "123" }
                               , clientId = "clientId0"
                               }
                             ]
@@ -323,7 +323,7 @@ test =
                         (Json.Encode.object [])
                         (Json.Decode.decodeValue Json.Decode.value "{ \\"field\\": 123 }")
                     )
-                , tab1.click 0 (Dom.id "start")
+                , tab1.portEvent 100 "from_js2" (Json.Encode.float 123)
                 ]
             )
         ]
