@@ -644,36 +644,6 @@ parseHttpRequests code =
             Err ()
 
 
-parsePortRequests : String -> Result () (List ( String, ( String, String ) ))
-parsePortRequests code =
-    case Elm.Parser.parseToFile ("module A exposing (..)\n" ++ code) of
-        Ok ast ->
-            case ast.declarations of
-                [ Node _ (FunctionDeclaration func) ] ->
-                    case Node.value func.declaration |> .expression of
-                        Node _ (ListExpr requests) ->
-                            List.filterMap
-                                (\(Node _ request) ->
-                                    case request of
-                                        TupledExpression [ Node _ (Literal a), Node _ (TupledExpression [ Node _ (Literal b), Node _ (Application [ _, Node _ (Literal json) ]) ]) ] ->
-                                            Just ( a, ( b, json ) )
-
-                                        _ ->
-                                            Nothing
-                                )
-                                requests
-                                |> Ok
-
-                        _ ->
-                            Err ()
-
-                _ ->
-                    Err ()
-
-        Err _ ->
-            Err ()
-
-
 eventsListContainer : String
 eventsListContainer =
     "eventsListContainer"
@@ -1482,21 +1452,6 @@ touchCodegen delay funcName client a =
     let
         touchToString : Touch -> Expression
         touchToString touch =
-            --"{ id = "
-            --    ++ String.fromInt touch.identifier
-            --    ++ ", screenPos = ("
-            --    ++ String.fromFloat touch.screenX
-            --    ++ ", "
-            --    ++ String.fromFloat touch.screenY
-            --    ++ "), clientPos = ("
-            --    ++ String.fromFloat touch.clientX
-            --    ++ ", "
-            --    ++ String.fromFloat touch.clientY
-            --    ++ "), pagePos = ("
-            --    ++ String.fromFloat touch.pageX
-            --    ++ ", "
-            --    ++ String.fromFloat touch.pageY
-            --    ++ ") }"
             Codegen.record
                 [ ( "id", Codegen.int touch.identifier )
                 , ( "screenPos", Codegen.tuple [ Codegen.float touch.screenX, Codegen.float touch.screenY ] )
@@ -1504,18 +1459,6 @@ touchCodegen delay funcName client a =
                 , ( "pagePos", Codegen.tuple [ Codegen.float touch.pageX, Codegen.float touch.pageY ] )
                 ]
     in
-    --client
-    --    ++ "."
-    --    ++ funcName
-    --    ++ " "
-    --    ++ String.fromInt delay
-    --    ++ " "
-    --    ++ targetIdFunc a.targetId
-    --    ++ " { targetTouches = [ "
-    --    ++ String.join ", " (List.map touchToString a.targetTouches)
-    --    ++ " ], changedTouches = [ "
-    --    ++ String.join ", " (List.map touchToString a.targetTouches)
-    --    ++ " ] }"
     Codegen.apply
         [ Codegen.access (Codegen.fun client) funcName
         , Codegen.int delay
@@ -1538,7 +1481,6 @@ pointerCodegen delay { includeClientPos, includePagePos, includeScreenPos } func
                         Nothing
 
                     else
-                        --Just (name ++ " " ++ String.fromFloat x ++ " " ++ String.fromFloat y)
                         Codegen.apply
                             [ Codegen.fun name
                             , Codegen.tuple [ Codegen.float x, Codegen.float y ]
@@ -1584,20 +1526,6 @@ pointerCodegen delay { includeClientPos, includePagePos, includeScreenPos } func
                         Just (Codegen.val "IsNotPrimary")
                     ]
     in
-    --client
-    --    ++ "."
-    --    ++ funcName
-    --    ++ " "
-    --    ++ String.fromInt delay
-    --    ++ " "
-    --    ++ targetIdFunc a.targetId
-    --    ++ " ("
-    --    ++ String.fromFloat a.offsetX
-    --    ++ ","
-    --    ++ String.fromFloat a.offsetY
-    --    ++ ") [ "
-    --    ++ String.join ", " options
-    --    ++ " ]"
     Codegen.apply
         [ Codegen.access (Codegen.fun client) funcName
         , Codegen.int delay
@@ -1609,20 +1537,6 @@ pointerCodegen delay { includeClientPos, includePagePos, includeScreenPos } func
 
 mouseCodegen : MillisecondWaitBefore -> Settings -> String -> String -> MouseEvent -> Expression
 mouseCodegen delay settings funcName client a =
-    --client
-    --    ++ "."
-    --    ++ funcName
-    --    ++ " "
-    --    ++ String.fromInt delay
-    --    ++ " "
-    --    ++ targetIdFunc a.targetId
-    --    ++ " ("
-    --    ++ String.fromFloat a.offsetX
-    --    ++ ","
-    --    ++ String.fromFloat a.offsetY
-    --    ++ ") "
-    --    ++ mouseEventModifiers settings a
-    --    ++ "\n"
     Codegen.apply
         [ Codegen.access (Codegen.fun client) funcName
         , Codegen.int delay
@@ -1640,7 +1554,6 @@ mouseEventModifiers { includeClientPos, includePagePos, includeScreenPos } a =
                 Nothing
 
             else
-                --Just (name ++ " " ++ String.fromFloat x ++ " " ++ String.fromFloat y)
                 Codegen.apply
                     [ Codegen.val name
                     , Codegen.float x
